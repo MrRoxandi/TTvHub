@@ -38,11 +38,7 @@ public sealed partial class LuaStartUpManager
         State.Environment["Mouse"] = new LuaMouse();
     }
 
-    public static async Task<LuaStartUpManager> CreateAsync()
-    {
-        var manager = new LuaStartUpManager();
-        return manager;
-    }
+    public static async Task<LuaStartUpManager> CreateAsync() => await Task.FromResult(new LuaStartUpManager());
 
     public async Task ReadMainConfigAsync()
     {

@@ -1,5 +1,6 @@
 ﻿using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using TTvHub.Core.Services.Modules.AuthModulesItems;
 
 namespace TTvHub.Core.Managers.AuthManagerItems;
 

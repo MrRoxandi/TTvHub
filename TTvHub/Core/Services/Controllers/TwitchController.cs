@@ -18,7 +18,7 @@ using Logger = TTvHub.Core.Logs.StaticLogger;
 
 namespace TTvHub.Core.Services.Controllers;
 
-public sealed class TwitchController : IPointsService, IAsyncDisposable
+public sealed class TwitchController : IAsyncDisposable
 {
     
     private string? _profilePictureUrl;
@@ -29,10 +29,10 @@ public sealed class TwitchController : IPointsService, IAsyncDisposable
     private TwitchApi Api => Auth._api;
     private TwitchEventSubModule? _eventClient;
     private TwitchChatModule? _chatClient;
+    private readonly TwitchPointsModule Db;
 
     // --- Managers ---
     private readonly LuaStartUpManager _configManager;
-    private readonly PointsManager _db = new("Twitch");
     // --- Inner logic --- 
     private readonly Channel<(TwitchEvent Event, TwitchEventArgs Args)> _eventChannel = Channel.CreateUnbounded<(TwitchEvent, TwitchEventArgs)>();
     private ConcurrentDictionary<(string, TwitchTools.TwitchEventKind), TwitchEvent> _events = [];
@@ -60,8 +60,9 @@ public sealed class TwitchController : IPointsService, IAsyncDisposable
     public event Action? StateChanged;
     public TwitchController(LuaStartUpManager configManager)
     {
-        _configManager = configManager;
         Auth = new();
+        _configManager = configManager;
+        Db = new TwitchPointsModule(Auth._api);
     }
 
     public async Task InitializeAsync()
@@ -70,22 +71,19 @@ public sealed class TwitchController : IPointsService, IAsyncDisposable
         await Auth.InitializeAsync();
         if (!IsAuthenticated)
         {
-            UpdateState("Authentication required. Please log in.");
             return; 
         }
-        _ = GetProfilePictureUrlFromApi();
+        _ = await GetProfilePictureUrlFromApi();
         _ = ProcessEventsQueueAsync(_serviceCts.Token);
         await ReloadEventsAsync();
-        StartClipTimer();
-        UpdateState("Ready. Connect modules to start.");
     }
 
 
     #region Connection and Disconnection
 
-    public async Task ConnectChatAsync()
+    public async Task<bool> ConnectChatAsync()
     {
-        if (IsChatConnected) return;
+        if (IsChatConnected) return await Task.FromResult(false);
         _chatClient = new();
         _chatClient.OnConnected += ChatOnConnectedHandler;
         _chatClient.OnDisconnected += ChatOnDisconnectedHandler;
@@ -93,19 +91,21 @@ public sealed class TwitchController : IPointsService, IAsyncDisposable
         _chatClient.OnMessageReceived += ChatOnMessageReceivedHandler;
         _chatClient.Connect(Auth.CurrentUser!.Login, Auth.CurrentUser!.AccessToken);
         ChatDisconnectRequested = false;
+        return await Task.FromResult(true);
     }
 
-    public async Task DisconnectChatAsync()
+    public async Task<bool> DisconnectChatAsync()
     {
         ChatDisconnectRequested = true;
-        if (!IsChatConnected) return;
-        if (_chatClient == null) return;
+        if (!IsChatConnected) return await Task.FromResult(false); ;
+        if (_chatClient == null) return await Task.FromResult(false); ;
         _chatClient.OnConnected -= ChatOnConnectedHandler;
         _chatClient.OnDisconnected -= ChatOnDisconnectedHandler;
         _chatClient.OnChatCommandReceived -= ChatOnChatCommandReceivedHandler;
         _chatClient.OnMessageReceived -= ChatOnMessageReceivedHandler;
         _chatClient.Disconnect();
         _chatClient = null;
+        return await Task.FromResult(true);
     }
 
     private void ChatOnMessageReceivedHandler(object? sender, OnMessageReceivedArgs e)
@@ -113,9 +113,8 @@ public sealed class TwitchController : IPointsService, IAsyncDisposable
         var chatMessage = e.ChatMessage;
         if (chatMessage.Message.Length < 10 || chatMessage.Username == Auth.CurrentUser!.Login) return;
         Logger.Log(LogCategory.Info, $"Awarding {chatMessage.Username} with {PointsPerMessage} for message.", this);
-        _ = AddPointsAsync(chatMessage.DisplayName, PointsPerMessage);
+        _ = Db.AddPointsByIdAsync(chatMessage.UserId, PointsPerMessage);
     }
-
     private void ChatOnChatCommandReceivedHandler(object? sender, OnChatCommandReceivedArgs e)
     {
         if (_events.TryGetValue((e.Command.CommandText, TwitchTools.TwitchEventKind.Command), out var twitchEvent))
@@ -132,15 +131,15 @@ public sealed class TwitchController : IPointsService, IAsyncDisposable
 
             var eventArgs = new TwitchEventArgs
             {
+                UserId = chatCommand.ChatMessage.UserId,
                 Sender = senderUsername,
-                Args = cmdArgs,
                 Permission = userLevel,
-                State = _luaState
+                State = _luaState,
+                Args = cmdArgs
             };
             _eventChannel.Writer.TryWrite((twitchEvent, eventArgs));
         }
     }
-
     private void ChatOnDisconnectedHandler()
     {
         UpdateState("Chat Disconnected");
@@ -152,7 +151,6 @@ public sealed class TwitchController : IPointsService, IAsyncDisposable
             await ConnectChatAsync();
         });
     }
-
     private void ChatOnConnectedHandler()
     {
         UpdateState("Chat Connected");
@@ -212,9 +210,11 @@ public sealed class TwitchController : IPointsService, IAsyncDisposable
 
             var eventArgs = new TwitchEventArgs
             {
+                Permission = TwitchTools.PermissionLevel.Viewer,
+                UserId = redemptionEvent.UserId,
                 Sender = senderUsername,
                 Args = rewardArgs,
-                Permission = TwitchTools.PermissionLevel.Viewer
+                State = _luaState,
             };
 
             _eventChannel.Writer.TryWrite((twitchEvent, eventArgs));
@@ -300,10 +300,6 @@ public sealed class TwitchController : IPointsService, IAsyncDisposable
     }
     #endregion
 
-    #region Start and Stop
-
-    #endregion
-
     public void SendChatMessage(string message)
     {
         if (!IsChatConnected)
@@ -325,17 +321,16 @@ public sealed class TwitchController : IPointsService, IAsyncDisposable
         Logger.Log(LogCategory.Warning, "Cannot send whisper: Twitch Chat client is not connected.", this);
     }
 
-    public long? GetEventCost(string eventName)
+    public long GetEventCost(string eventName)
     {
-        if (_events == null) return null;
+        if (_events == null) return 0;
         var result = _events.TryGetValue((eventName, TwitchTools.TwitchEventKind.Command), out var tEvent);
-        if (!result || tEvent is null) return null;
+        if (!result || tEvent is null) return 0;
         return tEvent.Cost;
     }
 
     public async Task ReloadEventsAsync() => _events = await _configManager.LoadTwitchEventsAsync();
-    //public async Task ReloadEventsAsync() => throw new NotImplementedException("Will be implemented later");
-
+    
     private async Task ProcessEventsQueueAsync(CancellationToken token)
     {
         await foreach (var (twitchEvent, eventArgs) in _eventChannel.Reader.ReadAllAsync(token))
@@ -349,7 +344,7 @@ public sealed class TwitchController : IPointsService, IAsyncDisposable
 
                     if (twitchEvent.Cost > 0)
                     {
-                        await AddPointsAsync(eventArgs.Sender, -twitchEvent.Cost);
+                        await Db.AddPointsByIdAsync(eventArgs.UserId, -twitchEvent.Cost);
                         Logger.Log(LogCategory.Info, $"Charged {twitchEvent.Cost} points from {eventArgs.Sender} for event '{twitchEvent.Name}'.", this);
                     }
                 }
@@ -371,7 +366,7 @@ public sealed class TwitchController : IPointsService, IAsyncDisposable
 
         if (twitchEvent.Cost > 0)
         {
-            var userPoints = await GetPointsAsync(args.Sender);
+            var userPoints = await Db.GetPointsByIdAsync(args.UserId);
             if (userPoints < twitchEvent.Cost)
             {
                 SendChatMessage($"@{args.Sender}, you need {twitchEvent.Cost} points for !{twitchEvent.Name}, but you only have {userPoints}.");
@@ -391,29 +386,34 @@ public sealed class TwitchController : IPointsService, IAsyncDisposable
     private Timer? _clipPointsTimer;
 
     
-
-    private void StartClipTimer()
+    public async Task<bool> StartClipTimerAsync()
     {
-        if (_clipPointsTimer == null && !string.IsNullOrEmpty(Auth.CurrentUser!.TwitchUserId))
+        if (!IsAuthenticated)
         {
-            _clipPointsTimer = new Timer(CheckForNewClipsAndAwardPoints, null, TimeSpan.FromSeconds(20),
-                TimeSpan.FromMinutes(ClipCheckIntervalMinutes));
-            Logger.Log(LogCategory.Info,
-                $"Clip points timer started. Interval: {ClipCheckIntervalMinutes} min.", this);
-        }
-        else if (string.IsNullOrEmpty(Auth.CurrentUser!.TwitchUserId))
-        {
-            Logger.Log(LogCategory.Warning, 
+            Logger.Log(LogCategory.Warning,
                 "Cannot start Clip points timer: TwitchApi or Broadcaster ID is not configured.", this);
+            return await Task.FromResult(false);
         }
+        _clipPointsTimer?.Dispose();
+        _clipPointsTimer = new Timer(CheckForNewClipsAndAwardPoints, null, TimeSpan.FromSeconds(20),
+                TimeSpan.FromMinutes(ClipCheckIntervalMinutes));
+        Logger.Log(LogCategory.Info,
+            $"Clip points timer started. Interval: {ClipCheckIntervalMinutes} min.", this);
+        return await Task.FromResult(true);
     }
-    private void StopClipTimer()
+    public async Task<bool> StopClipTimerAsync()
     {
+        if (_clipPointsTimer == null)
+        {
+            Logger.Log(LogCategory.Warning, "Unable to stop Clips timer. Is't not running...", this);
+            return await Task.FromResult(false);
+        }
         _clipPointsTimer?.Dispose();
         _clipPointsTimer = null;
         Logger.Log(LogCategory.Info, "Clip points timer stopped.", this);
+        return await Task.FromResult(true);
     }
-
+    
     private async void CheckForNewClipsAndAwardPoints(object? state)
     {
         if (!IsAuthenticated)
@@ -462,7 +462,7 @@ public sealed class TwitchController : IPointsService, IAsyncDisposable
 
                         Logger.Log(LogCategory.Info,
                             $"adding {PointsPerClip} point to {clip.CreatorName} for creating clip ({clip.Id[..8]})", this);
-                        await AddPointsByIdAsync(clip.CreatorId, PointsPerClip);
+                        await Db.AddPointsByIdAsync(clip.CreatorId, PointsPerClip);
                     }
                 }
                 else
@@ -483,93 +483,10 @@ public sealed class TwitchController : IPointsService, IAsyncDisposable
         await Container.InsertValueAsync(LastClipCheckTimeKey, DateTime.UtcNow);
     }
 
-    public async Task<bool> AddPointsAsync(string username, long points) => await ModifyUserPoints(username, points);
-
-    public async Task<bool> SetPointsAsync(string username, long points) =>
-        await ModifyUserPoints(username, points, false);
-
-
-    public async Task<long> GetPointsAsync(string username) => await _db.GetUserPointsAsync(username);
-
-    public async Task<IEnumerable<KeyValuePair<string, long>>> GetAllUsersPointsAsync()
-    {
-        var r = await _db.GetAllUsersPointsAsync();
-        return [..r];
-    }
-
-    public async Task<string?> GetUserIdByNameAsync(string username)
-    {
-        var user = await _db.GetUserAsync(username);
-        return user?.UserId ?? null;
-    }
-
-    public async Task<string?> GetUserNameByIdAsync(string userId)
-    {
-        var user = await _db.GetUserByIdAsync(userId);
-        return user?.Username ?? null;
-    }
-
-    public async Task<bool> AddPointsByIdAsync(string userId, long points) => await ModifyUserPointsById(userId, points);
-
-    public async Task<bool> SetPointsByIdAsync(string userId, long points) =>
-        await ModifyUserPointsById(userId, points, false);
-
-    public async Task<long> GetPointsByIdAsync(string userId) => await _db.GetUserPointsByIdAsync(userId);
-
-
-    private async Task<bool> ModifyUserPoints(string username, long points, bool isAdding = true)
-    {
-        if (string.IsNullOrWhiteSpace(username)) return false;
-        var userId = await GetUserIdFromApi(username);
-        if (userId is null)
-        {
-            Logger.Log(LogCategory.Warning, $"Cannot modify points for '{username}': User ID not found.", this);
-            return false;
-        }
-
-        var userExists = await _db.ContainsIdAsync(userId);
-        if (userExists)
-            return isAdding
-                ? await _db.AddUserPointsByIdAsync(userId, points)
-                : await _db.SetUserPointsByIdAsync(userId, points);
-        await _db.CreateUserAsync(username, userId);
-        return isAdding ?
-            await _db.AddUserPointsByIdAsync(userId, points) :
-            await _db.SetUserPointsByIdAsync(userId, points);
-    }
-
-    private async Task<bool> ModifyUserPointsById(string userId, long points, bool isAdding = true)
-    {
-        if (string.IsNullOrWhiteSpace(userId)) return false;
-        var userExists = await _db.ContainsIdAsync(userId);
-        if (userExists)
-            return isAdding
-                ? await _db.AddUserPointsByIdAsync(userId, points)
-                : await _db.SetUserPointsByIdAsync(userId, points);
-        var username = await GetUserLoginFromApi(userId);
-        if (username is null)
-        {
-            Logger.Log(LogCategory.Warning, $"Cannot modify points for 'id: {userId}': Username not found.", this);
-            return false;
-        }
-        await _db.CreateUserAsync(username, userId);
-
-        return isAdding ?
-            await _db.AddUserPointsByIdAsync(userId, points) :
-            await _db.SetUserPointsByIdAsync(userId, points);
-    }
-
-    private async Task<string?> GetUserIdFromApi(string username)
-    {
-        var id = await Api.InnerApi.Helix.Users.GetUsersAsync(logins: [username]);
-        return id?.Users.First().Id;
-    }
-
-    private async Task<string?> GetUserLoginFromApi(string id)
-    {
-        var users = await Api.InnerApi.Helix.Users.GetUsersAsync([id]);
-        return users?.Users.First().Login;
-    }
+    public async Task<bool> AddPointsAsync(string username, long points) => await Db.AddPointsAsync(username, points);
+    public async Task<bool> SetPointsAsync(string username, long points) => await Db.SetPointsAsync(username, points);
+    public async Task<long> GetPointsAsync(string username) => await Db.GetPointsAsync(username);
+    public async Task<IEnumerable<KeyValuePair<string, long>>> GetAllUsersPointsAsync() => await Db.GetAllPointsAsync();
 
     public async Task<string> GetProfilePictureUrlFromApi()
     {

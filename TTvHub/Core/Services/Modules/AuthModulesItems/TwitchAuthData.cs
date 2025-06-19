@@ -1,7 +1,7 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace TTvHub.Core.Managers.AuthManagerItems;
+namespace TTvHub.Core.Services.Modules.AuthModulesItems;
 
 public class TwitchAuthData
 {

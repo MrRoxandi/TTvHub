@@ -43,10 +43,7 @@ public static class TwitchTools
     {
         if (string.IsNullOrEmpty(eventName)) throw new Exception("Unable to get cost for event with empty name");
         if (Service is not { } client) throw new Exception("Unable to send twitch chat message. Client is null");
-        var cost = client.GetEventCost(eventName);
-        if (cost is not { } c)
-            throw new Exception($"Unable to get cost of {eventName} event. Reason: this events doesn't exist.");
-        return c;
+        return client.GetEventCost(eventName);
     }
 
     public enum PermissionLevel : int

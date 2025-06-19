@@ -6,7 +6,7 @@
 <MudSnackbarProvider />
 
 <MudLayout>
-    <MudPaper Height="650px" Style="position:relative">
+    <MudPaper Height="600px" Style="position:relative">
         <MudDrawerContainer Class="mud-height-full">
             <MudAppBar Dense="false">
                 <MudAvatar Size="Size.Medium" Variant="Variant.Outlined">
@@ -17,7 +17,7 @@
                 <MudSpacer />
                 <MudIconButton Color="Color.Dark" Icon="@(_isDarkMode? Icons.Material.Outlined.DarkMode : Icons.Material.Outlined.LightMode)" Edge="Edge.End" OnClick="_ => _isDarkMode = !_isDarkMode" />
             </MudAppBar>
-            <MudDrawer @bind-Open="@_drawerOpen" Elevation="1" Variant="DrawerVariant.Mini" OpenMiniOnHover="true">
+            <MudDrawer @bind-Open="@_drawerOpen" Elevation="1" Variant="DrawerVariant.Mini" OpenMiniOnHover="true" Fixed="true">
                 <MudNavMenu>
                     <MudNavLink Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Store">Store</MudNavLink>
                     <MudNavLink Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.LibraryBooks">Library</MudNavLink>
@@ -32,6 +32,7 @@
         </MudDrawerContainer>
     </MudPaper>
 </MudLayout>
+
 @code {
     bool _drawerOpen = false;
     bool _isDarkMode = true;

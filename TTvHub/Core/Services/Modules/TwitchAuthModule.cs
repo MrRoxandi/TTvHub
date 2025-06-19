@@ -5,6 +5,7 @@ using TTvHub.Core.Managers.AuthManagerItems;
 using TTvHub.Core.Twitch;
 using TTvHub.Core.Logs;
 using Logger = TTvHub.Core.Logs.StaticLogger;
+using TTvHub.Core.Services.Modules.AuthModulesItems;
 
 namespace TTvHub.Core.Services.Modules;
 
@@ -182,7 +183,7 @@ public partial class TwitchAuthModule
         await using var ms = new MemoryStream();
 
         // Write the non-secret IV to the beginning of the stream
-        await ms.WriteAsync(aes.IV, 0, aes.IV.Length);
+        await ms.WriteAsync(aes.IV.AsMemory(0, aes.IV.Length));
 
         await using (var cs = new CryptoStream(ms, encryptor, CryptoStreamMode.Write))
         await using (var sw = new StreamWriter(cs, Encoding.UTF8))
@@ -227,7 +228,7 @@ public partial class TwitchAuthModule
 
     private static Task<byte[]> DeriveKeyAsync(string secret)
     {
-        return Task.Run(() =>
+        return Task.Run(async () =>
         {
             var saltBytes = Encoding.UTF8.GetBytes(secret); // Using the secret as the salt is acceptable for some scenarios
             const int iterations = 10000; // Increased iterations for better security
@@ -239,7 +240,7 @@ public partial class TwitchAuthModule
                 HashAlgorithmName.SHA256);
 
             // Generate a 32-byte (256-bit) key, suitable for AES-256
-            return deriveBytes.GetBytes(32);
+            return await Task.FromResult(deriveBytes.GetBytes(32));
         });
     }
 }

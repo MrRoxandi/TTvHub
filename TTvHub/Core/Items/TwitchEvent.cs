@@ -8,10 +8,11 @@ namespace TTvHub.Core.Items
 {
     public struct TwitchEventArgs
     {
-        public string Sender;
+        public required string Sender;
+        public required string UserId;
         public string[]? Args;
-        public LuaState State;
-        public TwitchTools.PermissionLevel Permission;
+        public required LuaState State;
+        public required TwitchTools.PermissionLevel Permission;
     }
 
     public class TwitchEvent
