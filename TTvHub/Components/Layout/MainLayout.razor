@@ -1,0 +1,101 @@
+﻿@inherits LayoutComponentBase
+
+<MudThemeProvider Theme="_mainTheme" @bind-IsDarkMode="_isDarkMode"/>
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudPaper Height="650px" Style="position:relative">
+        <MudDrawerContainer Class="mud-height-full">
+            <MudAppBar Dense="false">
+                <MudAvatar Size="Size.Medium" Variant="Variant.Outlined">
+                    <MudImage Src="logos/appicon.png"></MudImage>
+                </MudAvatar>
+                @* <MudIcon Icon="@Icons.Material.Outlined.Check" /> *@
+                <MudText Class="pa-6" Typo="Typo.h4" Align="Align.Center">TTvHub Manager</MudText>
+                <MudSpacer />
+                <MudIconButton Color="Color.Dark" Icon="@(_isDarkMode? Icons.Material.Outlined.DarkMode : Icons.Material.Outlined.LightMode)" Edge="Edge.End" OnClick="_ => _isDarkMode = !_isDarkMode" />
+            </MudAppBar>
+            <MudDrawer @bind-Open="@_drawerOpen" Elevation="1" Variant="DrawerVariant.Mini" OpenMiniOnHover="true">
+                <MudNavMenu>
+                    <MudNavLink Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Store">Store</MudNavLink>
+                    <MudNavLink Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.LibraryBooks">Library</MudNavLink>
+                    <MudNavLink Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Group">Community</MudNavLink>
+                </MudNavMenu>
+            </MudDrawer>
+            <MudMainContent>
+                <MudContainer MaxWidth="MaxWidth.Large">
+                    @Body
+                </MudContainer>
+            </MudMainContent>
+        </MudDrawerContainer>
+    </MudPaper>
+</MudLayout>
+@code {
+    bool _drawerOpen = false;
+    bool _isDarkMode = true;
+    private readonly MudTheme _mainTheme = new()
+    {
+        PaletteLight = new PaletteLight()
+        {
+            Primary = "#6441A5",        // фирменный тёмно-фиолетовый Twitch:contentReference[oaicite:4]{index=4}
+            Secondary = "#B9A3E3",      // приглушённый светло-фиолетовый (пастельный)
+            Dark = "#121212",           // цвет для тёмной надписи на светлом фоне
+            Background = "#F1F1F1",     // светло-серый фон:contentReference[oaicite:5]{index=5}
+            Surface = "#FFFFFF",
+            AppbarBackground = "#6441A5",
+            AppbarText = "#FFFFFF",
+            DrawerBackground = "#EEEEEE",
+            DrawerText = "#000000",
+            TextPrimary = "#000000",
+            TextSecondary = "rgba(0,0,0, 0.6)",
+            ActionDefault = "#6441A5",
+            ActionDisabled = "rgba(0,0,0, 0.26)",
+            Divider = "rgba(0,0,0, 0.12)"
+        },
+        PaletteDark = new PaletteDark()
+        {
+            Primary = "#9146FF",        // яркий фиолетовый для тёмного режима:contentReference[oaicite:6]{index=6}
+            Secondary = "#6741A5",
+            Dark = "#FFFFFF",
+            Background = "#121212",     // почти чёрный фон
+            Surface = "#1E1E2E",
+            AppbarBackground = "#121212",
+            AppbarText = "#FFFFFF",
+            DrawerBackground = "#1E1E2E",
+            DrawerText = "#FFFFFF",
+            TextPrimary = "#FFFFFF",
+            TextSecondary = "rgba(255,255,255, 0.70)",
+            ActionDefault = "#9146FF",
+            ActionDisabled = "rgba(255,255,255, 0.5)",
+            Divider = "rgba(255,255,255, 0.12)"
+        },
+        Typography = new Typography()
+        {
+            Default = new DefaultTypography { FontFamily = new[] { "Inter", "Segoe UI", "Helvetica Neue", "sans-serif" } },
+            H1 = new H1Typography { FontSize = "2rem", FontWeight = "700", LineHeight = "1.2" },
+            H2 = new H2Typography { FontSize = "1.75rem", FontWeight = "600" },
+            H3 = new H3Typography { FontSize = "1.5rem", FontWeight = "500" },
+            H4 = new H4Typography { FontSize = "1.25rem", FontWeight = "500" },
+            H5 = new H5Typography { FontSize = "1rem", FontWeight = "500" },
+            H6 = new H6Typography { FontSize = "0.875rem", FontWeight = "500" }
+        },
+        LayoutProperties = new LayoutProperties()
+        {
+            DefaultBorderRadius = "4px",
+            DrawerWidthLeft = "260px",
+            DrawerWidthRight = "80px"
+        },
+        ZIndex = new ZIndex()
+        {
+            Drawer = 1100,
+            AppBar = 2000,
+            Popover = 1200,
+            Dialog = 2100,
+            Snackbar = 2200,
+            Tooltip = 2300
+        },
+        Shadows = new Shadow()
+    };
+}

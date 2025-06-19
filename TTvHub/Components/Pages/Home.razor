@@ -1,0 +1,115 @@
+﻿@page "/"
+@using TTvHub.Core.Managers
+@inject ISnackbar Snackbar
+@inject LuaStartUpManager StartUpManager
+@inject TwitchController Twitch
+
+@* <MudText Class="mt-3 align-center pa-3" Typo="Typo.h4" Align="Align.Center">Connections and Configuration</MudText>
+<MudDivider Class="pa-3" DividerType="DividerType.Middle"/>
+
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+    <MudPaper Elevation="2" Class="mt-2 pa-6 d-flex flex-column align-center" Width="30%" >
+        <MudStack Row="true" AlignItems="AlignItems.Center" Class="pa-3">
+            <MudAvatar Color="Color.Transparent" Elevation="2" Size="Size.Medium">
+                <MudImage Src="logos/twitch-tile.svg" Alt="T" ObjectFit="ObjectFit.Fill"/>
+            </MudAvatar>
+            <MudText>Some cool Text</MudText>
+        </MudStack>
+        <MudDivider/>
+        <MudStack Row="true" AlignItems="AlignItems.End">
+            <MudButton>Left button</MudButton>
+            <MudButton>Right button</MudButton>
+        </MudStack>
+    </MudPaper>
+    <MudPaper Elevation="2" Class="mt-2 pa-6 d-flex flex-column align-center">
+
+    </MudPaper>
+</MudStack>
+
+
+<MudStack AlignItems="AlignItems.Center" Justify="Justify.Center">
+    <MudPaper Elevation="2" Class="pa-6 d-flex flex-column align-center" Style="width: 400px;">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.Center">
+            @if (StartUpManager.IsConfigured)
+            {
+                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Large" />
+            }
+            else
+            {
+                <MudIcon Icon="@Icons.Material.Filled.Cancel" Color="Color.Error" Size="Size.Large" />
+            }
+            <MudText Typo="Typo.h4">Основная конфигурация</MudText>
+        </MudStack>
+        
+        
+
+        <MudDivider Class="my-2" />
+
+        <!-- Твой контент (например, кнопки запуска, статусы и прочее) -->
+        <MudButton Disabled="isBusy" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PlayArrow">
+            Запустить
+        </MudButton>
+    </MudPaper>
+</MudStack> *@
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.Center" Class="py-4 px-4">
+        <MudPaper >
+            <MudStack Justify="Justify.Center" AlignItems="AlignItems.Center" Row="true">
+                <MudAvatar Rounded="true" Size="Size.Large" Variant="Variant.Outlined" Class="mx-4 my-4">
+                    @if (Twitch.Auth.IsAuthenticated || string.IsNullOrEmpty(Twitch.ProfilePictureUrl))
+                    {
+                        <MudImage Width="200" Src="@Twitch.ProfilePictureUrl" />
+                    }
+                    else
+                    {
+                        <MudIcon Color="Color.Info" Icon="@Icons.Material.Filled.QuestionMark"/>
+                    }
+                </MudAvatar>
+                @* <MudImage Style="@($"background-color: {Colors.Gray.Lighten1}")" Class="rounded-xl" Width="200" Elevation="4" Src=""> </MudImage> *@
+                <MudText Align="Align.Center"> Some login info </MudText>
+            </MudStack>
+        </MudPaper>
+        <MudPaper Class="mb-7 py-4 px-4 rounded-lg" Elevation="3">
+            <MudStack AlignItems="AlignItems.Center">
+                <MudStack Row="true" AlignItems="AlignItems.Center">
+                    <MudText Typo="Typo.body1" Aligh="Align.Center"> Main Configuration: </MudText>
+                <MudText Color="@(Twitch.IsAuthenticated? Color.Success: Color.Error)" Typo="Typo.body1" Align="Align.Center"> @(Twitch.IsAuthenticated ? "Good" : "Error")</MudText>
+                </MudStack>
+            <MudButton Class="rounded-lg" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Sync" Color="Color.Info" OnClick="LoginAsync"> Reload </MudButton>
+            </MudStack>
+        </MudPaper>
+    </MudStack>
+
+
+@code{
+
+    protected override async Task OnInitializedAsync()
+    {
+        // if (!StartUpManager.IsConfigured)
+        // {
+        //     try
+        //     {
+        //         await StartUpManager.ReadMainConfigAsync();
+        //         Snackbar.Add("Main configuration readed", Severity.Success);
+        //     }
+        //     catch (Exception ex)
+        //     {
+        //         Snackbar.Add($"Error occured: {ex.Message}", Severity.Error);
+        //     }
+        // }
+        try
+        {
+            await Twitch.InitializeAsync(); 
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error occured: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task LoginAsync()
+    {
+        await Twitch.Auth.LoginAsync();
+    }
+}
