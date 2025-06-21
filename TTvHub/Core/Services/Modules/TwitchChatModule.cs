@@ -1,45 +1,65 @@
-﻿using TwitchLib.Client;
+﻿using System.Net;
+using TTvHub.Core.Logs;
+using TwitchLib.Api.Core.Enums;
+using TwitchLib.Client;
 using TwitchLib.Client.Events;
+using TwitchLib.Client.Interfaces;
 using TwitchLib.Client.Models;
+using TwitchLib.Communication.Events;
+using Logger = TTvHub.Core.Logs.StaticLogger;
 
 namespace TTvHub.Core.Services.Modules
 {
-    public sealed class TwitchChatModule : IAsyncDisposable
+    public sealed class TwitchChatModule
     {
-        private TwitchClient _client = new();
-
-        public bool IsConnected => _client.IsConnected;
+        private TwitchClient? InnerClient;
+        public bool IsConnected => InnerClient?.IsConnected ?? false;
+        public bool DisconnectRequsted { get; private set; } = false;
 
         public event EventHandler<OnMessageReceivedArgs>? OnMessageReceived;
         public event EventHandler<OnChatCommandReceivedArgs>? OnChatCommandReceived;
-        public event Action? OnConnected;
         public event Action? OnDisconnected;
-
-        public void Connect(string username, string accessToken)
+        public async Task<bool> ConnectAsync(string username, string accessToken)
         {
-            if (IsConnected) return;
-
+            if (IsConnected)
+            {
+                Logger.Log(LogCategory.Warning, "Twitch chat module is already connected.", this);
+                return await Task.FromResult(false);
+            }
             var credentials = new ConnectionCredentials(username, accessToken);
-            _client.Initialize(credentials, username);
-
-            _client.OnMessageReceived += (s, e) => OnMessageReceived?.Invoke(s, e);
-            _client.OnChatCommandReceived += (s, e) => OnChatCommandReceived?.Invoke(s, e);
-            _client.OnConnected += (s, e) => OnConnected?.Invoke();
-            _client.OnDisconnected += (s, e) => OnDisconnected?.Invoke();
-
-            _client.Connect();
+            if (InnerClient != null)
+            {
+                await DisconnectAsync();
+            }
+            InnerClient = new();
+            InnerClient.Initialize(credentials, username);
+            
+            InnerClient.OnMessageReceived += (s, e) => OnMessageReceived?.Invoke(s, e);
+            InnerClient.OnChatCommandReceived += (s, e) => OnChatCommandReceived?.Invoke(s, e);
+            InnerClient.OnConnected += OnConnectedHandler;
+            InnerClient.OnDisconnected += (s, e) => OnDisconnected?.Invoke();
+            DisconnectRequsted = false;
+            return await Task.FromResult(InnerClient.Connect());
         }
-        public void Disconnect()
+
+        public async Task<bool> DisconnectAsync()
         {
-            if (!IsConnected) return;
-            _client.Disconnect();
+            if (InnerClient == null)
+            {
+                Logger.Log(LogCategory.Warning, "Twitch chat module is already disconnected.", this);
+                return await Task.FromResult(false);
+            }
+            DisconnectRequsted = true;
+            InnerClient.Disconnect();
+            CleanupChatResources();
+            return await Task.FromResult(true);
         }
 
         public void SendMessage(string channel, string message)
         {
             if (IsConnected)
             {
-                _client.SendMessage(channel, message);
+                InnerClient!.SendMessage(channel, message);
             }
         }
 
@@ -47,18 +67,23 @@ namespace TTvHub.Core.Services.Modules
         {
             if (IsConnected)
             {
-                _client.SendWhisper(target, message);
+                InnerClient!.SendWhisper(target, message);
             } 
         }
 
-        public async ValueTask DisposeAsync()
+        private void OnConnectedHandler(object? sender, OnConnectedArgs e)
         {
-            Disconnect();
-            OnMessageReceived = null;
-            OnChatCommandReceived = null;
-            OnConnected = null;
-            OnDisconnected = null;
+            
+            Logger.Log(LogCategory.Info, "Chat module is connected", this);
         }
 
+        private void CleanupChatResources()
+        {
+            if (InnerClient == null) return;
+            Logger.Log(LogCategory.Info, "Cleaning up Twitch Chat client resources...", this);
+            if (IsConnected) { InnerClient.Disconnect(); }
+            InnerClient = null;
+            Logger.Log(LogCategory.Info, "Twitch Chat client resources cleaned up.", this);
+        }
     }
 }

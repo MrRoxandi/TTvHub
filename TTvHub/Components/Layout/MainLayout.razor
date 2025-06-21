@@ -6,31 +6,27 @@
 <MudSnackbarProvider />
 
 <MudLayout>
-    <MudPaper Height="600px" Style="position:relative">
-        <MudDrawerContainer Class="mud-height-full">
-            <MudAppBar Dense="false">
-                <MudAvatar Size="Size.Medium" Variant="Variant.Outlined">
-                    <MudImage Src="logos/appicon.png"></MudImage>
-                </MudAvatar>
-                @* <MudIcon Icon="@Icons.Material.Outlined.Check" /> *@
-                <MudText Class="pa-6" Typo="Typo.h4" Align="Align.Center">TTvHub Manager</MudText>
-                <MudSpacer />
-                <MudIconButton Color="Color.Dark" Icon="@(_isDarkMode? Icons.Material.Outlined.DarkMode : Icons.Material.Outlined.LightMode)" Edge="Edge.End" OnClick="_ => _isDarkMode = !_isDarkMode" />
-            </MudAppBar>
-            <MudDrawer @bind-Open="@_drawerOpen" Elevation="1" Variant="DrawerVariant.Mini" OpenMiniOnHover="true" Fixed="true">
-                <MudNavMenu>
-                    <MudNavLink Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Store">Store</MudNavLink>
-                    <MudNavLink Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.LibraryBooks">Library</MudNavLink>
-                    <MudNavLink Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Group">Community</MudNavLink>
-                </MudNavMenu>
-            </MudDrawer>
-            <MudMainContent>
-                <MudContainer MaxWidth="MaxWidth.Large">
-                    @Body
-                </MudContainer>
-            </MudMainContent>
-        </MudDrawerContainer>
-    </MudPaper>
+    <MudAppBar Dense="false" Elevation="2">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="_ => _drawerOpen = !_drawerOpen" />
+        <MudAvatar Size="Size.Medium" Variant="Variant.Outlined">
+            <MudImage Src="logos/appicon.png"></MudImage>
+        </MudAvatar>
+        <MudText Class="pa-6" Typo="Typo.h4" Align="Align.Center">TTvHub Manager</MudText>
+        <MudSpacer />
+        <MudIconButton Color="Color.Dark" Icon="@(_isDarkMode? Icons.Material.Outlined.DarkMode : Icons.Material.Outlined.LightMode)" Edge="Edge.End" OnClick="_ => _isDarkMode = !_isDarkMode" />
+    </MudAppBar>
+    <MudDrawer Class="mud-height-full" @bind-Open="@_drawerOpen" Elevation="1" Variant="DrawerVariant.Temporary" Fixed="true">
+        <MudNavMenu>
+            <MudNavLink Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Store">Store</MudNavLink>
+            <MudNavLink Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.LibraryBooks">Library</MudNavLink>
+            <MudNavLink Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Group">Community</MudNavLink>
+        </MudNavMenu>
+    </MudDrawer>
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.Large">
+            @Body
+        </MudContainer>
+    </MudMainContent>
 </MudLayout>
 
 @code {

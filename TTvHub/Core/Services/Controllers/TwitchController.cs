@@ -1,34 +1,27 @@
-﻿using Lua;
-using System.Collections.Concurrent;
-using System.Threading.Channels;
-using TTvHub.Core.BackEnds;
+﻿using TwitchLib.EventSub.Websockets.Core.EventArgs.Channel;
+using Logger = TTvHub.Core.Logs.StaticLogger;
 using TTvHub.Core.BackEnds.Abstractions;
+using System.Collections.Concurrent;
+using TTvHub.Core.Services.Modules;
+using System.Threading.Channels;
+using TwitchLib.Client.Events;
+using TTvHub.Core.Managers;
+using TTvHub.Core.Twitch;
 using TTvHub.Core.Items;
 using TTvHub.Core.Logs;
-using TTvHub.Core.Managers;
-using TTvHub.Core.Services.Interfaces;
-using TTvHub.Core.Services.Modules;
-using TTvHub.Core.Twitch;
-using TwitchLib.Api.Core.Enums;
-using TwitchLib.Api.Helix;
-using TwitchLib.Client.Events;
-using TwitchLib.EventSub.Websockets.Core.EventArgs;
-using TwitchLib.EventSub.Websockets.Core.EventArgs.Channel;
-using Logger = TTvHub.Core.Logs.StaticLogger;
+using Lua;
 
 namespace TTvHub.Core.Services.Controllers;
 
-public sealed class TwitchController : IAsyncDisposable
+public sealed class TwitchController
 {
-    
-    private string? _profilePictureUrl;
-    public string ProfilePictureUrl => _profilePictureUrl ?? string.Empty;
+    public string ProfilePictureUrl { get; private set; } = string.Empty;
 
     // --- Modules ---
-    public TwitchAuthModule Auth { get; private set; }
+    public readonly TwitchAuthModule Auth;
     private TwitchApi Api => Auth._api;
-    private TwitchEventSubModule? _eventClient;
-    private TwitchChatModule? _chatClient;
+    private readonly TwitchEventSubModule _eventClient;
+    private readonly TwitchChatModule _chatClient;
     private readonly TwitchPointsModule Db;
 
     // --- Managers ---
@@ -40,40 +33,39 @@ public sealed class TwitchController : IAsyncDisposable
     private CancellationTokenSource _serviceCts = new();
     // --- Constants --- 
     private const string LastClipCheckTimeKey = "last_clip_check_time_utc";
-    private const int EventActionShutdownWaitSeconds = 3;
-    private const int WorkerTaskShutdownWaitSeconds = 3;
-    private const int ViewerPointsIntervalMinutes = 1;
-    private const int PointsPerMinuteForViewers = 0;
     private const int ClipCheckIntervalMinutes = 15;
-    private const int WorkerQueuePollDelayMs = 100;
-    private const int ReconnectDelaySeconds = 5;
-    private const int MaxConcurrentEvents = 5;
     private const int PointsPerMessage = 2;
     private const int PointsPerClip = 10;
     public string ServiceStatusMessage { get; private set; } = "Ready";
     public bool IsChatConnected => _chatClient?.IsConnected ?? false;
-    private bool ChatDisconnectRequested { get; set; } = false;
     public bool IsEventSubConnected => _eventClient?.IsConnected ?? false;
-    private bool EventSubStopRequested { get; set; } = false;
     public bool IsAuthenticated => Auth.IsAuthenticated;
 
-    public event Action? StateChanged;
+    //public event Action? StateChanged;
     public TwitchController(LuaStartUpManager configManager)
     {
         Auth = new();
         _configManager = configManager;
         Db = new TwitchPointsModule(Auth._api);
+        _chatClient = new();
+        _chatClient.OnDisconnected += ChatOnDisconnectedHandler;
+        _chatClient.OnChatCommandReceived += ChatOnChatCommandReceivedHandler;
+        _chatClient.OnMessageReceived += ChatOnMessageReceivedHandler;
+
+        _eventClient = new(Auth);
+        _eventClient.WebsocketDisconnected += EventWebsocketDisconnectedHandler;
+        _eventClient.ChannelPointsCustomRewardRedemptionAdd += EventChannelPointsCustomRewardRedemptionAddHandler;
+
     }
 
     public async Task InitializeAsync()
     {
-        UpdateState("Initializing...");
         await Auth.InitializeAsync();
         if (!IsAuthenticated)
         {
             return; 
         }
-        _ = await GetProfilePictureUrlFromApi();
+        await RequestProfilePicture();
         _ = ProcessEventsQueueAsync(_serviceCts.Token);
         await ReloadEventsAsync();
     }
@@ -81,31 +73,17 @@ public sealed class TwitchController : IAsyncDisposable
 
     #region Connection and Disconnection
 
+    // --- Chat methods block ---
     public async Task<bool> ConnectChatAsync()
     {
         if (IsChatConnected) return await Task.FromResult(false);
-        _chatClient = new();
-        _chatClient.OnConnected += ChatOnConnectedHandler;
-        _chatClient.OnDisconnected += ChatOnDisconnectedHandler;
-        _chatClient.OnChatCommandReceived += ChatOnChatCommandReceivedHandler;
-        _chatClient.OnMessageReceived += ChatOnMessageReceivedHandler;
-        _chatClient.Connect(Auth.CurrentUser!.Login, Auth.CurrentUser!.AccessToken);
-        ChatDisconnectRequested = false;
-        return await Task.FromResult(true);
+        
+        return await _chatClient.ConnectAsync(Auth.CurrentUser!.Login, Auth.CurrentUser!.AccessToken);
     }
-
     public async Task<bool> DisconnectChatAsync()
     {
-        ChatDisconnectRequested = true;
         if (!IsChatConnected) return await Task.FromResult(false); ;
-        if (_chatClient == null) return await Task.FromResult(false); ;
-        _chatClient.OnConnected -= ChatOnConnectedHandler;
-        _chatClient.OnDisconnected -= ChatOnDisconnectedHandler;
-        _chatClient.OnChatCommandReceived -= ChatOnChatCommandReceivedHandler;
-        _chatClient.OnMessageReceived -= ChatOnMessageReceivedHandler;
-        _chatClient.Disconnect();
-        _chatClient = null;
-        return await Task.FromResult(true);
+        return await _chatClient.DisconnectAsync();
     }
 
     private void ChatOnMessageReceivedHandler(object? sender, OnMessageReceivedArgs e)
@@ -140,63 +118,76 @@ public sealed class TwitchController : IAsyncDisposable
             _eventChannel.Writer.TryWrite((twitchEvent, eventArgs));
         }
     }
+
     private void ChatOnDisconnectedHandler()
     {
-        UpdateState("Chat Disconnected");
-        if (ChatDisconnectRequested) return;
-        // TODO: Better reconnection
-        Task.Delay(ReconnectDelaySeconds).ContinueWith(async _ =>
+        if (_chatClient.DisconnectRequsted)
         {
-            await DisconnectChatAsync();
-            await ConnectChatAsync();
+            Logger.Log(LogCategory.Info, "Chat module is disconnected", this);
+            return;
+        }
+        Logger.Log(LogCategory.Warning, "Chat module is disconnected unexpectedly. Reconnecting in 5 seconds", this);
+        Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5));
+                if (_chatClient.DisconnectRequsted)
+                {
+                    Logger.Log(LogCategory.Info, "Reconnect cancelled (stop requested)..", this);
+                    return;
+                }
+                await _chatClient.DisconnectAsync();
+                await _chatClient.ConnectAsync(Auth.CurrentUser!.Login, Auth.CurrentUser.AccessToken);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log(LogCategory.Error, "An error occurred during reconnection.", this, ex);
+                await _chatClient.DisconnectAsync();
+            }
         });
     }
-    private void ChatOnConnectedHandler()
-    {
-        UpdateState("Chat Connected");
-    }
 
+    // --- EventSub methods block ---
     public async Task ConnectEventSubAsync()
     {
         if (IsEventSubConnected) return;
-        _eventClient = new();
-        _eventClient.ErrorOccurred += EventErrorOccurredHandler;
-        _eventClient.WebsocketConnected += EventWebsocketConnectedHandler;
-        _eventClient.WebsocketDisconnected += EventWebsocketDisconnectedHandler;
-        _eventClient.ChannelPointsCustomRewardRedemptionAdd += EventChannelPointsCustomRewardRedemptionAddHandler;
         await _eventClient.ConnectAsync();
-        EventSubStopRequested = false;
     }
-
     public async Task DisconnectEventSubAsync()
     {
         if (!IsEventSubConnected) return;
         if (_eventClient == null) return;
-        _eventClient.ErrorOccurred -= EventErrorOccurredHandler;
-        _eventClient.WebsocketConnected -= EventWebsocketConnectedHandler;
-        _eventClient.WebsocketDisconnected -= EventWebsocketDisconnectedHandler;
-        _eventClient.ChannelPointsCustomRewardRedemptionAdd -= EventChannelPointsCustomRewardRedemptionAddHandler;
         await _eventClient.DisconnectAsync();
-        _eventClient = null;
-        EventSubStopRequested = true;
-    }
-
-    private Task EventErrorOccurredHandler(object sender, ErrorOccuredArgs args)
-    {
-        Logger.Log(LogCategory.Error, $"EventSub client error: {args.Message}", this, args.Exception);
-        return Task.CompletedTask;
     }
 
     private Task EventWebsocketDisconnectedHandler(object sender, EventArgs args)
     {
-        Logger.Log(LogCategory.Warning, "EventSub WebSocket disconnected.", this);
-        if (EventSubStopRequested) return Task.CompletedTask;
-        // TODO: Better reconnection
-        Task.Delay(ReconnectDelaySeconds).ContinueWith(async _ =>
+        if (_eventClient.DisconnectRequsted)
         {
-            await ConnectEventSubAsync();
+            Logger.Log(LogCategory.Info, "EventSub module is disconnected", this);
+            return Task.CompletedTask;
+        }
+        Logger.Log(LogCategory.Warning, "EventSub module is disconnected unexpectedly. Reconnecting in 5 seconds", this);
+        return Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5));
+                if (_eventClient.DisconnectRequsted)
+                {
+                    Logger.Log(LogCategory.Info, "Reconnect cancelled (stop requested)..", this);
+                    return;
+                }
+                await _eventClient.DisconnectAsync();
+                await _eventClient.ConnectAsync();
+            }
+            catch (Exception ex)
+            {
+                Logger.Log(LogCategory.Error, "An error occurred during reconnection.", this, ex);
+                await _eventClient.DisconnectAsync();
+            }
         });
-        return Task.CompletedTask;
     }
 
     private Task EventChannelPointsCustomRewardRedemptionAddHandler(object sender, ChannelPointsCustomRewardRedemptionArgs e)
@@ -222,82 +213,6 @@ public sealed class TwitchController : IAsyncDisposable
         return Task.CompletedTask;
     }
 
-    private async Task EventWebsocketConnectedHandler(object sender, WebsocketConnectedArgs args)
-    {
-        UpdateState("EventSub Connected");
-        Logger.Log(LogCategory.Info, "EventSub client connected.", this);
-        await RegisterEventSubTopicsAsync();
-    }
-
-    private async Task<bool> RegisterEventSubTopicsAsync()
-    {
-        if (_eventClient == null || string.IsNullOrEmpty(_eventClient.SessionId))
-        {
-            Logger.Log(LogCategory.Error, "Cannot register EventSub topics: Client is not connected or Session ID is missing.", this);
-            return false;
-        }
-
-        if (Auth.CurrentUser == null || string.IsNullOrEmpty(Auth.CurrentUser.TwitchUserId))
-        {
-            Logger.Log(LogCategory.Error, "Cannot register EventSub topics: Broadcaster User ID is missing.", this);
-            return false;
-        }
-
-        var allSuccess = true;
-
-        var condition = new Dictionary<string, string> { { "broadcaster_user_id", Auth.CurrentUser.TwitchUserId } };
-
-        var rewardResult =
-            await SubscribeToEventAsync("channel.channel_points_custom_reward_redemption.add", "1",
-                condition); // channel points reward
-        if (!rewardResult) allSuccess = false;
-
-        return allSuccess;
-    }
-    private async Task<bool> SubscribeToEventAsync(string type, string version, Dictionary<string, string> condition)
-    {
-        if (_eventClient == null || string.IsNullOrEmpty(_eventClient.SessionId) ||
-            Api.InnerApi.Helix.EventSub == null) return false;
-        try
-        {
-            Logger.Log(LogCategory.Info, $"Attempting to subscribe to [{type}:{version}]", this);
-            var response = await Api.InnerApi.Helix.EventSub.CreateEventSubSubscriptionAsync(
-                type, version, condition,
-                EventSubTransportMethod.Websocket, _eventClient.SessionId
-            );
-            if (response?.Subscriptions == null || response.Subscriptions.Length == 0)
-            {
-                Logger.Log(LogCategory.Error, 
-                    $"EventSub subscription request for [{type}:{version}] failed or returned empty data. Check scopes and broadcaster ID. Cost: {response?.TotalCost}, MaxCost: {response?.MaxTotalCost}", this);
-                return false;
-            }
-
-            var subscriptionSuccessful = true;
-            foreach (var sub in response.Subscriptions)
-            {
-                Logger.Log(LogCategory.Info,
-                    $"EventSub subscription to [{sub.Type} v{sub.Version}] Status: {sub.Status}. Cost: {sub.Cost}. ID: {sub.Id}", this);
-                if (sub.Status is "enabled" or "webhook_callback_verification_pending")
-                    continue; // "enabled" for websocket
-                Logger.Log(LogCategory.Warning,
-                    $"EventSub subscription for [{sub.Type}] has status: {sub.Status}. Expected 'enabled'.", this);
-
-                if (sub.Status.Contains("fail") || sub.Status.Contains("revoked") || sub.Status.Contains("error"))
-                    subscriptionSuccessful = false;
-            }
-
-            if (!subscriptionSuccessful)
-                Logger.Log(LogCategory.Error,
-                    "One or more EventSub subscriptions for did not report 'enabled' status.", this);
-            return subscriptionSuccessful;
-        }
-        catch (Exception ex)
-        {
-            Logger.Log(LogCategory.Error,
-                $"Failed to subscribe to EventSub topic [{type}:{version}] due to an API error.", this, ex);
-            return false;
-        }
-    }
     #endregion
 
     public void SendChatMessage(string message)
@@ -488,44 +403,31 @@ public sealed class TwitchController : IAsyncDisposable
     public async Task<long> GetPointsAsync(string username) => await Db.GetPointsAsync(username);
     public async Task<IEnumerable<KeyValuePair<string, long>>> GetAllUsersPointsAsync() => await Db.GetAllPointsAsync();
 
-    public async Task<string> GetProfilePictureUrlFromApi()
+    public async Task RequestProfilePicture()
     {
-        if (!string.IsNullOrEmpty(_profilePictureUrl))
+        if (!string.IsNullOrEmpty(ProfilePictureUrl))
         {
-            return _profilePictureUrl;
+            return;
         }
         if (Auth.CurrentUser?.TwitchUserId == null)
         {
-            return string.Empty;
+            return;
         }
 
         try
         {
             var users = await Api.InnerApi.Helix.Users.GetUsersAsync(ids: [Auth.CurrentUser.TwitchUserId]);
-            var url = users?.Users.FirstOrDefault()?.ProfileImageUrl ?? string.Empty;
-
-            _profilePictureUrl = url;
-
-            StateChanged?.Invoke();
-
-            return url;
+            if (users == null)
+            {
+                return;
+            }
+            ProfilePictureUrl = users.Users.First().ProfileImageUrl;
         }
         catch (Exception ex)
         {
             Logger.Log(LogCategory.Error, "Failed to get profile picture from API", this, ex);
-            return string.Empty;
+            ProfilePictureUrl = string.Empty;
         }
     }
 
-    private void UpdateState(string message)
-    {
-        ServiceStatusMessage = message;
-        StateChanged?.Invoke();
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        if (_chatClient != null) await _chatClient.DisposeAsync();
-        if (_eventClient != null) await _eventClient.DisposeAsync();
-    }
 }

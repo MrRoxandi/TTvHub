@@ -30,17 +30,29 @@
                     <MudButton Class="mx-2 my-2" StartIcon="@Icons.Material.Filled.Send" ButtonType="ButtonType.Submit" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info" OnClick="LoginAsync"> Login</MudButton>
                 }
             </MudStack>
-        </MudPaper>
-        @* <MudPaper Class="mb-7 py-4 px-4 rounded-lg" Elevation="3">
-            <MudStack AlignItems="AlignItems.Center">
-                <MudStack Row="true" AlignItems="AlignItems.Center">
-                    <MudText Typo="Typo.body1" Aligh="Align.Center"> Main Configuration: </MudText>
-                <MudText Color="@(Twitch.IsAuthenticated? Color.Success: Color.Error)" Typo="Typo.body1" Align="Align.Center"> @(Twitch.IsAuthenticated ? "Good" : "Error")</MudText>
-                </MudStack>
-            <MudButton Class="rounded-lg" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Sync" Color="Color.Info" OnClick="LoginAsync"> Reload </MudButton>
+            <MudDivider Light="true" DividerType="DividerType.Middle" Class="px-2 py-2"/>
+            <MudStack Row="true" Justify="Justify.Center" AlignItems="AlignItems.Start" Class="px-2 py-2">
+                <MudText Typo="Typo.body1" Align="Align.Start"> Chat module </MudText>
+                <MudSpacer/>
+                <MudButton Variant="Variant.Outlined" Size="Size.Small"> Some cool text </MudButton>
             </MudStack>
-        </MudPaper> *@
-    </MudStack>
+        </MudPaper>
+        <MudPaper Class="mx-4 my-4 px-4 py-4">
+            <MudText Typo="Typo.h3"> Main Configuration </MudText>
+            <MudText Typo="Typo.h3"> Main Configuration </MudText>
+            <MudText Typo="Typo.h3"> Main Configuration </MudText>
+            <MudText Typo="Typo.h3"> Main Configuration </MudText>
+            <MudText Typo="Typo.h3"> Main Configuration </MudText>
+        </MudPaper>
+        <MudPaper Class="mx-4 my-4 px-4 py-4">
+            <MudText Typo="Typo.h3"> Additional screen </MudText>
+            <MudText Typo="Typo.h3"> Additional screen </MudText>
+            <MudText Typo="Typo.h3"> Additional screen </MudText>
+            <MudText Typo="Typo.h3"> Additional screen </MudText>
+            <MudText Typo="Typo.h3"> Additional screen </MudText>
+            
+        </MudPaper>
+</MudStack>
 
 
 @code{
@@ -62,6 +74,10 @@
         try
         {
             await Twitch.InitializeAsync(); 
+            if (Twitch.Auth.IsAuthenticated && string.IsNullOrEmpty(Twitch.ProfilePictureUrl))
+            {
+                await Twitch.RequestProfilePicture();
+            }
         }
         catch (Exception ex)
         {
