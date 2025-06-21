@@ -1,10 +1,11 @@
 ﻿@page "/"
 @using TTvHub.Core.Managers
+@using TTvHub.Components.TwitchCards
 @inject ISnackbar Snackbar
-@inject LuaStartUpManager StartUpManager
+@inject LuaStartUpManager Manager
 @inject TwitchController Twitch
 
-<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.Center" Class="py-4 px-4">
+<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.Center" Class="py-4 px-4 justify-center">
         <MudPaper >
             <MudStack Justify="Justify.Center" AlignItems="AlignItems.Center" Row="true">
                 <MudAvatar Elevation="2" Size="Size.Large" Variant="Variant.Outlined" Class="mx-4 my-4">
@@ -30,54 +31,140 @@
                     <MudButton Class="mx-2 my-2" StartIcon="@Icons.Material.Filled.Send" ButtonType="ButtonType.Submit" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info" OnClick="LoginAsync"> Login</MudButton>
                 }
             </MudStack>
-            <MudDivider Light="true" DividerType="DividerType.Middle" Class="px-2 py-2"/>
-            <MudStack Row="true" Justify="Justify.Center" AlignItems="AlignItems.Start" Class="px-2 py-2">
-                <MudText Typo="Typo.body1" Align="Align.Start"> Chat module </MudText>
-                <MudSpacer/>
-                <MudButton Variant="Variant.Outlined" Size="Size.Small"> Some cool text </MudButton>
+            <MudDivider DividerType="DividerType.Middle" Class="px-2"/>
+            <MudPaper Class="py-2 px-2 my-2 mx-2" Elevation="0"> 
+                @* Chat card *@
+                <MudStack Row="true" Justify="Justify.Center" AlignItems="AlignItems.Center" Class="px-2 py-2">
+                    <MudText Typo="Typo.h5" Align="Align.Start">
+                        @($"Chat status"):
+                    </MudText>
+                    <MudSpacer />
+                    <MudChip T="object" Variant="Variant.Filled"
+                             Color="@(Twitch.IsChatConnected ? Color.Success : Color.Error)"
+                             Size="Size.Small"
+                             Class="">
+                        @(Twitch.IsChatConnected ? "Online" : "Offline")
+                    </MudChip>
+
+                    <MudTooltip Text="Login required" Disabled="!IsChatButtonDisabled" Arrow="true">
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Class="rounded-lg"
+                                   OnClick="SwitchChatConnectionMode" Disabled=@(IsChatButtonDisabled || IsChatButtonBusy)>
+                            @(Twitch.IsChatConnected ? "Disconnect" : "Connect")
+                        </MudButton>
+                    </MudTooltip>
+                </MudStack>
+            </MudPaper>
+        
+            <MudPaper Class="py-2 px-2 my-2 mx-2" Elevation="0">
+                @* EventSub card *@
+                <MudStack Row="true" Justify="Justify.Center" AlignItems="AlignItems.Center" Class="px-2 py-2">
+                    <MudText Typo="Typo.h5" Align="Align.Start">
+                        @($"Events status"):
+                    </MudText>
+                    <MudSpacer />
+                    <MudChip T="object" Variant="Variant.Filled"
+                             Color="@(Twitch.IsEventSubConnected ? Color.Success : Color.Error)"
+                             Size="Size.Small"
+                             Class="">
+                        @(Twitch.IsEventSubConnected ? "Online" : "Offline")
+                    </MudChip>
+                    <MudTooltip Text="Login required" Disabled="!IsEventSubButtonDisabled" Arrow="true">
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Class="rounded-lg"
+                                   OnClick="SwitchEventSubConnectionMode" Disabled=@(IsEventSubButtonDisabled || IsEventSubButtonBusy)>
+                            @(Twitch.IsEventSubConnected ? "Disconnect" : "Connect")
+                        </MudButton>
+                    </MudTooltip>
+                </MudStack>
+            </MudPaper>
+            @* <MudDivider DividerType="DividerType.Middle" Class="px-2" /> *@
+            @*Reword later*@
+            @* <MudPaper Class="py-2 px-2 my-2 mx-2" Elevation="0">
+                <MudStack Row="true" Justify="Justify.Center" AlignItems="AlignItems.Center" Class="px-2 py-2">
+                    <MudText Typo="Typo.h5" Align="Align.Start">
+                        @($"Clips timer status"):
+                    </MudText>
+                    <MudSpacer />
+                    <MudChip T="object" Variant="Variant.Filled"
+                             Color="@(Twitch.IsClipsTimer ? Color.Success : Color.Error)"
+                             Size="Size.Small"
+                             Class="">
+                    @(Twitch.IsClipsTimer ? "Running" : "Stopped")
+                    </MudChip>
+                    <MudTooltip Text="Login required" Disabled="!IsClipButtonDisabled" Arrow="true">
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Class="rounded-lg"
+                               OnClick="SwitchStateClipsAsync" Disabled=@(IsClipButtonDisabled || IsClipTimerButtonBusy)>
+                            @(Twitch.IsClipsTimer ? "Stop" : "Run")
+                        </MudButton>
+                    </MudTooltip>
+                </MudStack>
+            </MudPaper> *@
+        </MudPaper>
+        @*Configuration block*@
+        <MudPaper Class="mx-2 my-2 px-4 py-4">
+            <MudText Align="Align.Center" Typo="Typo.h4"> Main configuration </MudText>
+
+            <MudStack>
+                <MudStack Row="true">
+                    <MudPaper Class="py-2 px-2 my-2 mx-2" Elevation="2">
+                        <MudStack AlignItems="AlignItems.Start" Justify="Justify.Center" Class="py-2 px-2">
+                            <MudText Align="Align.Center">Standart timeout: </MudText>
+                            <MudNumericField Min="-1" Variant="Variant.Text" Label="Milliseconds" Clearable="true" Step="500" @bind-Value="Manager.Settings.StdTimeOut" />
+                        </MudStack>
+                    </MudPaper>
+                    <MudPaper Class="py-2 px-2 my-2 mx-2" Elevation="2">
+                        <MudStack AlignItems="AlignItems.Start" Justify="Justify.Center" Class="my-2 mx-2">
+                            <MudText Align="Align.Center">Clips interval: </MudText>
+                            <MudNumericField Min="0" Variant="Variant.Text" Label="Minutes" Clearable="true" Step="1" @bind-Value="Manager.Settings.ClipCheckIntervalMinutes" />
+                        </MudStack>
+                    </MudPaper>
+                </MudStack>
+                <MudStack Row="true">
+                    <MudPaper Class="py-2 px-2 my-2 mx-2" Elevation="2">
+                        <MudStack AlignItems="AlignItems.Start" Justify="Justify.Center" Class="my-2 mx-2">
+                            <MudText Align="Align.Center">Points per message: </MudText>
+                            <MudNumericField Min="0" Variant="Variant.Text" Label="Count" Clearable="true" Step="1" @bind-Value="Manager.Settings.PointsPerMessage" />
+                        </MudStack>
+                    </MudPaper>
+                    <MudPaper Class="py-2 px-2 my-2 mx-2" Elevation="2">
+                        <MudStack AlignItems="AlignItems.Start" Justify="Justify.Center" Class="my-2 mx-2">
+                            <MudText Align="Align.Center">Points per clip: </MudText>
+                            <MudNumericField Min="0" Variant="Variant.Text" Label="Count" Clearable="true" Step="1" @bind-Value="Manager.Settings.PointsPerClip" />
+                        </MudStack>
+                    </MudPaper>
+                </MudStack>
             </MudStack>
-        </MudPaper>
-        <MudPaper Class="mx-4 my-4 px-4 py-4">
-            <MudText Typo="Typo.h3"> Main Configuration </MudText>
-            <MudText Typo="Typo.h3"> Main Configuration </MudText>
-            <MudText Typo="Typo.h3"> Main Configuration </MudText>
-            <MudText Typo="Typo.h3"> Main Configuration </MudText>
-            <MudText Typo="Typo.h3"> Main Configuration </MudText>
-        </MudPaper>
-        <MudPaper Class="mx-4 my-4 px-4 py-4">
-            <MudText Typo="Typo.h3"> Additional screen </MudText>
-            <MudText Typo="Typo.h3"> Additional screen </MudText>
-            <MudText Typo="Typo.h3"> Additional screen </MudText>
-            <MudText Typo="Typo.h3"> Additional screen </MudText>
-            <MudText Typo="Typo.h3"> Additional screen </MudText>
-            
+            <MudButton Class="mx-2 my-2 justify-center" StartIcon="@Icons.Material.Filled.Save" Color="Color.Primary" Size="Size.Small" OnClick="SaveChangesAsync">
+                Save
+            </MudButton>
         </MudPaper>
 </MudStack>
 
 
 @code{
+    private bool IsChatButtonDisabled => !Twitch.IsAuthenticated;
+    private bool IsChatButtonBusy { get; set; } = false;
+    private bool IsChatConnected => Twitch.IsChatConnected;
+
+    private bool IsEventSubButtonDisabled => !Twitch.IsAuthenticated;
+    private bool IsEventSubButtonBusy { get; set; } = false;
+    private bool IsEventSubConnected => Twitch.IsEventSubConnected;
+
+    private bool IsClipButtonDisabled => !Twitch.IsAuthenticated;
+    private bool IsClipTimerButtonBusy { get; set; } = false;
 
     protected override async Task OnInitializedAsync()
     {
-        // if (!StartUpManager.IsConfigured)
-        // {
-        //     try
-        //     {
-        //         await StartUpManager.ReadMainConfigAsync();
-        //         Snackbar.Add("Main configuration readed", Severity.Success);
-        //     }
-        //     catch (Exception ex)
-        //     {
-        //         Snackbar.Add($"Error occured: {ex.Message}", Severity.Error);
-        //     }
-        // }
         try
         {
-            await Twitch.InitializeAsync(); 
-            if (Twitch.Auth.IsAuthenticated && string.IsNullOrEmpty(Twitch.ProfilePictureUrl))
+            await Twitch.InitializeAsync();
+            if (Twitch.Auth.IsAuthenticated)
             {
-                await Twitch.RequestProfilePicture();
+                if (string.IsNullOrEmpty(Twitch.ProfilePictureUrl))
+                    await Twitch.RequestProfilePicture();
+
             }
+            await Task.Run(Twitch.ConnectChatAsync);
+            await Twitch.ConnectEventSubAsync();
         }
         catch (Exception ex)
         {
@@ -85,13 +172,137 @@
         }
     }
 
+    private async Task SwitchChatConnectionMode()
+    {
+        try
+        {
+            IsChatButtonBusy = true;
+            var suc = IsChatConnected switch
+            {
+                false => await Task.Run(Twitch.ConnectChatAsync),
+                _ => await Task.Run(Twitch.DisconnectChatAsync)
+            };
+            if (suc)
+            {
+                Snackbar.Add("The action was completed successfully.", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("The action was performed with an error. See the logs", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log(LogCategory.Error, "Error ocurred when executing an action.", this, ex);
+            Snackbar.Add($"Error ocurred when executing an action. Message: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            IsChatButtonBusy = false;
+        }
+    }
+
+    private async Task SwitchEventSubConnectionMode()
+    {
+        try
+        {
+            IsEventSubButtonBusy = true;
+            var suc = IsEventSubConnected switch
+            {
+                false => await Twitch.ConnectEventSubAsync(),
+                _ => await Twitch.DisconnectEventSubAsync()
+            };
+            if (suc)
+            {
+                Snackbar.Add("The action was completed successfully.", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("The action was performed with an error. See the logs", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log(LogCategory.Error, "Error ocurred when executing an action.", this, ex);
+            Snackbar.Add($"Error ocurred when executing an action. Message: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            IsEventSubButtonBusy = false;
+        }
+    }
+
+    private async Task ReadMainConfigurationAsync()
+    {
+        try
+        {
+            await Manager.ReadMainSettingsAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"While processing main configuration ocured an error. Message: {ex.Message}", Severity.Error);
+        }
+    }
+
     private async Task LoginAsync()
     {
         await Twitch.Auth.LoginAsync();
+        await Task.Run(Twitch.ConnectChatAsync);
+        await Twitch.ConnectEventSubAsync();
     }
 
     private async Task LogoutAsync()
     {
+        await Task.Run(Twitch.DisconnectChatAsync);
+        await Twitch.DisconnectEventSubAsync();
         await Twitch.Auth.LogoutAsync();
+        if (Twitch.IsClipsTimer)
+        {
+            await Twitch.StopClipTimerAsync();
+        }
+    }
+
+    private async Task SaveChangesAsync()
+    {
+        try
+        {
+            await Manager.SaveMainSettingsAsync();
+            Snackbar.Add("Saved successfully", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Ocured an error while saving settings. Message: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task SwitchStateClipsAsync()
+    {
+        IsClipTimerButtonBusy = true;
+        try
+        {
+
+            var suc = Twitch.IsClipsTimer switch
+            {
+                true => await Twitch.StopClipTimerAsync(),
+                _ => await Twitch.StartClipTimerAsync()
+            };
+            if (suc)
+            {
+                Snackbar.Add("The action was completed successfully.", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("The action was performed with an error. See the logs", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log(LogCategory.Error, "Error ocurred when executing an action.", this, ex);
+            Snackbar.Add($"Error ocurred when executing an action. Message: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            IsClipTimerButtonBusy = false;
+        }
     }
 }

@@ -2,29 +2,28 @@
 using Lua.Standard;
 using Microsoft.Maui.Storage;
 using System.Collections.Concurrent;
+using System.IO.Pipelines;
+using System.Text.Json;
 using TTvHub.Core.BackEnds.Abstractions;
 using TTvHub.Core.Items;
 using TTvHub.Core.Logs;
 using TTvHub.Core.LuaWrappers.Hardware;
 using TTvHub.Core.LuaWrappers.Services;
 using TTvHub.Core.LuaWrappers.Stuff;
+using TTvHub.Core.Managers.LuaSUMItems;
 using Logger = TTvHub.Core.Logs.StaticLogger;
 
 namespace TTvHub.Core.Managers;
 
 public sealed partial class LuaStartUpManager
 {
+    public MainSettings Settings;
     public LuaState State { get; }
-    public bool ForceRelog { get; private set; }
-    public bool MoreLogs { get; private set; }
-    public long StdTimeOut { get; private set; }
     public bool IsConfigured { get; private set; } = false;
-
     public static string ConfigsFolder => Directory.CreateDirectory(Path.Combine(Directory.GetCurrentDirectory(), "configs")).FullName;
-    public static string MainConfig => "config.lua";
+    public static string SettingsFileName => "setting.json";
     public static string TwitchEventsConfig => "TwitchEvents.lua";
     public static string TimerActionsConfig => "TimerActions.lua";
-
 
     private LuaStartUpManager()
     {
@@ -40,25 +39,33 @@ public sealed partial class LuaStartUpManager
 
     public static async Task<LuaStartUpManager> CreateAsync() => await Task.FromResult(new LuaStartUpManager());
 
-    public async Task ReadMainConfigAsync()
+    public async Task ReadMainSettingsAsync()
     {
-        var fileResult = await ParseLuaFileAsync(Path.Combine(ConfigsFolder, MainConfig))
-            ?? throw new Exception($"File {MainConfig} is not a proper config. Check syntax.");
-
-        ForceRelog = fileResult["force-relog"].Type == LuaValueType.Boolean && fileResult["force-relog"].Read<bool>();
-
-        MoreLogs = fileResult["logs"].Type == LuaValueType.Boolean && fileResult["logs"].Read<bool>();
-
-        long timeout = fileResult["timeout"].Type == LuaValueType.Number
-            ? fileResult["timeout"].Read<long>()
-            : 30000;
-
-        StdTimeOut = timeout > 0 ? timeout : 30000;
-
-        Logger.Log(LogCategory.Info, "Main configuration loaded successfully", this);
+        var fullPath = Path.Combine(ConfigsFolder, SettingsFileName);
+        if (!File.Exists(fullPath))
+        {
+            await CreateDefaultSettingFile();
+            return;
+        }
+        using var stream = File.OpenRead(fullPath);
+        Settings = await JsonSerializer.DeserializeAsync<MainSettings>(stream);
         IsConfigured = true;
     }
 
+    public async Task SaveMainSettingsAsync()
+    {
+        var fullPath = Path.Combine(ConfigsFolder, SettingsFileName);
+        File.Delete(fullPath);
+        using var stream = File.OpenWrite(fullPath);
+        await JsonSerializer.SerializeAsync(stream, Settings, options: new() { WriteIndented = true });
+    }
+
+    private static async Task CreateDefaultSettingFile()
+    {
+        var fullPath = Path.Combine(ConfigsFolder, SettingsFileName);
+        using var stream = File.OpenWrite(fullPath);
+        await JsonSerializer.SerializeAsync(stream, new MainSettings(), options: new() { WriteIndented = true });
+    }
     private async Task<LuaTable?> ParseLuaFileAsync(string filePath)
     {
         var configName = Path.GetFileName(filePath);
@@ -132,8 +139,8 @@ public sealed partial class LuaStartUpManager
                 if (twEventTable["timeout"].Type != LuaValueType.Number)
                 {
                     Logger.Log(LogCategory.Warning,
-                        $"In file {fileName} ['{currentKey}']['timeout'] is not a timeout. Will be used default value: {StdTimeOut} ms", this);
-                    timeout = StdTimeOut;
+                        $"In file {fileName} ['{currentKey}']['timeout'] is not a timeout. Will be used default value: {Settings.StdTimeOut} ms", this);
+                    timeout = Settings.StdTimeOut;
                 }
                 else
                 {
@@ -143,8 +150,8 @@ public sealed partial class LuaStartUpManager
                 if (timeout < 0 && timeout != -1)
                 {
                     Logger.Log(LogCategory.Warning,
-                        $"In file {fileName} ['{currentKey}']['timeout'] is not a valid timeout. Will be used default value: {StdTimeOut} ms", this);
-                    timeout = StdTimeOut;
+                        $"In file {fileName} ['{currentKey}']['timeout'] is not a valid timeout. Will be used default value: {Settings.StdTimeOut} ms", this);
+                    timeout = Settings.StdTimeOut;
                 }
 
                 if (twEventTable["perm"].Type != LuaValueType.Number)

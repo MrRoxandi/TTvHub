@@ -1,4 +1,7 @@
 ﻿@inherits LayoutComponentBase
+@using TTvHub.Core.Managers
+@inject ISnackbar Snackbar
+@inject LuaStartUpManager Manager
 
 <MudThemeProvider Theme="_mainTheme" @bind-IsDarkMode="_isDarkMode"/>
 <MudPopoverProvider />
@@ -31,7 +34,10 @@
 
 @code {
     bool _drawerOpen = false;
-    bool _isDarkMode = true;
+    bool _isDarkMode {
+        get => Manager.Settings.IsDarkMode;
+        set => Manager.Settings.IsDarkMode = value;
+    }
     private readonly MudTheme _mainTheme = new()
     {
         PaletteLight = new PaletteLight()
@@ -95,4 +101,16 @@
         },
         Shadows = new Shadow()
     };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await Manager.ReadMainSettingsAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"While processing main configuration ocured an error. Message: {ex.Message}", Severity.Error);
+        }
+    }
 }

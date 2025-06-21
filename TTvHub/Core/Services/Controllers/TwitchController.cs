@@ -33,9 +33,9 @@ public sealed class TwitchController
     private CancellationTokenSource _serviceCts = new();
     // --- Constants --- 
     private const string LastClipCheckTimeKey = "last_clip_check_time_utc";
-    private const int ClipCheckIntervalMinutes = 15;
-    private const int PointsPerMessage = 2;
-    private const int PointsPerClip = 10;
+    private int ClipCheckIntervalMinutes => _configManager.Settings.ClipCheckIntervalMinutes;
+    private int PointsPerMessage => _configManager.Settings.PointsPerMessage;
+    private int PointsPerClip => _configManager.Settings.PointsPerClip;
     public string ServiceStatusMessage { get; private set; } = "Ready";
     public bool IsChatConnected => _chatClient?.IsConnected ?? false;
     public bool IsEventSubConnected => _eventClient?.IsConnected ?? false;
@@ -149,16 +149,15 @@ public sealed class TwitchController
     }
 
     // --- EventSub methods block ---
-    public async Task ConnectEventSubAsync()
+    public async Task<bool> ConnectEventSubAsync()
     {
-        if (IsEventSubConnected) return;
-        await _eventClient.ConnectAsync();
+        if (IsEventSubConnected) return await Task.FromResult(false);
+        return await _eventClient.ConnectAsync();
     }
-    public async Task DisconnectEventSubAsync()
+    public async Task<bool> DisconnectEventSubAsync()
     {
-        if (!IsEventSubConnected) return;
-        if (_eventClient == null) return;
-        await _eventClient.DisconnectAsync();
+        if (!IsEventSubConnected) return await Task.FromResult(false);
+        return await _eventClient.DisconnectAsync();
     }
 
     private Task EventWebsocketDisconnectedHandler(object sender, EventArgs args)
@@ -300,6 +299,7 @@ public sealed class TwitchController
 
     private Timer? _clipPointsTimer;
 
+    public bool IsClipsTimer => _clipPointsTimer != null;
     
     public async Task<bool> StartClipTimerAsync()
     {
@@ -421,7 +421,7 @@ public sealed class TwitchController
             {
                 return;
             }
-            ProfilePictureUrl = users.Users.First().ProfileImageUrl;
+            ProfilePictureUrl = users.Users[0].ProfileImageUrl;
         }
         catch (Exception ex)
         {
